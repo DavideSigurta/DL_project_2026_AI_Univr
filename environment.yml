@@ -1,0 +1,35 @@
+name: isic-dl
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # Core ML
+  - pytorch>=2.3
+  - torchvision>=0.18
+  - torchaudio>=2.3
+
+  # Data
+  - pandas>=2.0
+  - numpy>=1.26,<2.0
+  - scikit-learn>=1.4
+  - pillow>=10.0
+
+  # Visualization
+  - matplotlib>=3.8
+  - seaborn>=0.13
+
+  # Notebook
+  - jupyter
+  - ipykernel
+
+  - pip:
+    - timm>=0.9
+    - albumentations>=1.4
+    - grad-cam>=1.5
+    - kaggle>=1.6
+    - tqdm>=4.66
