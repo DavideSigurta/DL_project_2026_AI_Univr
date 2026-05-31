@@ -7,8 +7,11 @@ import torch
 from torch import nn
 
 
-def build_backbone(arch: str, pretrained: bool, num_classes: int) -> nn.Module:
-    model = timm.create_model(arch, pretrained=pretrained, num_classes=num_classes)
+def build_backbone(arch: str, pretrained: bool, num_classes: int, features_only: bool = False) -> nn.Module:
+    if features_only:
+        model = timm.create_model(arch, pretrained=pretrained, num_classes=0)
+    else:
+        model = timm.create_model(arch, pretrained=pretrained, num_classes=num_classes)
     if hasattr(model, "num_features"):
         model.feature_dim = model.num_features  # type: ignore[attr-defined]
     return model
@@ -26,6 +29,20 @@ class ProjectionHead(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+class SimCLRModel(nn.Module):
+    """Encoder + projection head as named submodules.
+    Only encoder.state_dict() is saved in SSL checkpoints; proj_head is discarded after pretraining.
+    """
+
+    def __init__(self, encoder: nn.Module, proj_head: nn.Module) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.proj_head = proj_head
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.proj_head(self.encoder(x))
 
 
 class _GRLFn(torch.autograd.Function):
@@ -63,7 +80,11 @@ class DomainClassifier(nn.Module):
         return self.net(x)
 
 
-def build_dann_model(backbone_arch: str, num_classes: int, pretrained: bool = True) -> Dict[str, nn.Module]:
+def build_dann_model(
+    backbone_arch: str,
+    num_classes: int,
+    pretrained: bool = True,
+) -> Dict[str, nn.Module]:
     backbone = timm.create_model(backbone_arch, pretrained=pretrained, num_classes=0)
     feat_dim = backbone.num_features if hasattr(backbone, "num_features") else None
     if feat_dim is None:

@@ -115,6 +115,14 @@ def run_experiment(config: Dict) -> Dict[str, float]:
         num_classes=config["model"].get("num_classes", 1),
     ).to(device)
 
+    # Load SSL encoder weights if provided
+    ssl_ckpt_path = config.get("ssl_checkpoint")
+    if ssl_ckpt_path:
+        ckpt = torch.load(ssl_ckpt_path, map_location=device)
+        encoder_state = ckpt.get("encoder", ckpt.get("model", ckpt))
+        missing, unexpected = model.load_state_dict(encoder_state, strict=False)
+        logger.info(f"Loaded SSL checkpoint from {ssl_ckpt_path} | missing={len(missing)} unexpected={len(unexpected)}")
+
     backbone_params, head_params = _split_params(model)
     optimizer_cfg = config.get("training", {})
     optimizer_name = optimizer_cfg.get("optimizer", "adamw").lower()
