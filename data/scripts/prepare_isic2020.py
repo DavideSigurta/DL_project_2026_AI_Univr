@@ -5,7 +5,7 @@ Downloads ISIC 2020 (224x224) from Kaggle if not present, then:
   - resolves the metadata CSV name (train-metadata.csv / train.csv)
   - resolves the image folder (train-image/ or train-image/image/)
   - removes the 425 official duplicates if the list is available
-  - performs a stratified 80/20 split on target (0=benign, 1=malignant)
+  - performs a stratified 80/10/10 split on target (0=benign, 1=malignant)
 
 Dataset: nischaydnk/isic-2020-jpg-224x224-resized
 Expected structure after unzip (variant A — most common):
@@ -33,6 +33,9 @@ OUT_DIR  = Path("data/processed/isic2020")
 
 KAGGLE_DATASET = "nischaydnk/isic-2020-jpg-224x224-resized"
 MIN_IMAGES = 33000
+TRAIN_RATIO = 0.8
+VAL_RATIO = 0.1
+TEST_RATIO = 0.1
 
 # Official ISIC 2020 duplicate list (425 images)
 # https://challenge2020.isic-archive.com  → "Download duplicate image list"
@@ -209,9 +212,21 @@ def process():
             f"Example expected path: {df['filepath'].iloc[0]}"
         )
 
-    # Stratified 80/20 split.
-    train_df, val_df = train_test_split(
-        df, test_size=0.2, random_state=42, stratify=df[tgt_col]
+    if abs(TRAIN_RATIO + VAL_RATIO + TEST_RATIO - 1.0) > 1e-6:
+        raise ValueError("Split ratios must sum to 1.0")
+
+    # Stratified 80/10/10 split.
+    train_df, temp_df = train_test_split(
+        df,
+        test_size=(VAL_RATIO + TEST_RATIO),
+        random_state=42,
+        stratify=df[tgt_col],
+    )
+    val_df, test_df = train_test_split(
+        temp_df,
+        test_size=(TEST_RATIO / (VAL_RATIO + TEST_RATIO)),
+        random_state=42,
+        stratify=temp_df[tgt_col],
     )
 
     cols = ["image_id", "filepath", tgt_col, "source"]
@@ -221,12 +236,15 @@ def process():
         cols = ["image_id", "filepath", "target", "source"]
 
     train_df[cols].reset_index(drop=True).to_csv(OUT_DIR / "train.csv", index=False)
-    val_df[cols].reset_index(drop=True).to_csv(OUT_DIR / "val.csv",     index=False)
+    val_df[cols].reset_index(drop=True).to_csv(OUT_DIR / "val.csv", index=False)
+    test_df[cols].reset_index(drop=True).to_csv(OUT_DIR / "test.csv", index=False)
 
-    n_mal_tr  = train_df["target"].sum()
+    n_mal_tr = train_df["target"].sum()
     n_mal_val = val_df["target"].sum()
+    n_mal_test = test_df["target"].sum()
     print(f"[INFO] Train: {len(train_df)} ({n_mal_tr} malignant, {n_mal_tr/len(train_df):.2%})")
     print(f"[INFO] Val:   {len(val_df)} ({n_mal_val} malignant, {n_mal_val/len(val_df):.2%})")
+    print(f"[INFO] Test:  {len(test_df)} ({n_mal_test} malignant, {n_mal_test/len(test_df):.2%})")
     print(f"[OK]  CSV files saved to {OUT_DIR}")
 
 

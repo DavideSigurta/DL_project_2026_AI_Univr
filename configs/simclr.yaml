@@ -1,0 +1,27 @@
+experiment:
+  name: "simclr_resnet18"
+  seed: 42
+  device: "auto"
+
+data:
+  task: "simclr"
+  train_csv: "data/processed/isic2020/train.csv"
+  img_size: 224
+  batch_size: 256
+  num_workers: 4
+
+model:
+  arch: "resnet18"
+  pretrained: true
+  projection_dim: 128
+  projection_hidden_dim: 512
+
+ssl:
+  temperature: 0.5
+  epochs: 100
+  optimizer: "adamw"
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+
+logging:
+  save_dir: "results/runs"

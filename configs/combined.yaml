@@ -1,0 +1,41 @@
+experiment:
+  name: "combined_ssl_mt_dann"
+  seed: 42
+  device: "auto"
+
+data:
+  img_size: 224
+  batch_size: 64
+  num_workers: 4
+  labeled_csv: "data/processed/isic2018/train.csv"
+  unlabeled_csv: "data/processed/isic2020/train.csv"
+  val_csv: "data/processed/isic2018/val.csv"
+  test_csv: "data/processed/isic2018/test.csv"
+
+model:
+  arch: "resnet18"
+  pretrained: true
+  num_classes: 1
+
+ssl:
+  temperature: 0.5
+  projection_dim: 128
+  projection_hidden_dim: 512
+  epochs: 100
+
+semisup:
+  ema_decay: 0.999
+  consistency_weight: 10.0
+  rampup_epochs: 10
+
+da:
+  domain_loss_weight: 0.5
+  lambda_schedule: "linear"
+
+training:
+  optimizer: "adamw"
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+
+logging:
+  save_dir: "results/runs"

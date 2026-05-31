@@ -1,0 +1,32 @@
+experiment:
+  name: "dann_resnet18"
+  seed: 42
+  device: "auto"
+
+data:
+  task: "dann"
+  source_csv: "data/processed/isic2018/train.csv"
+  target_csv: "data/processed/isic2020/train.csv"
+  val_csv: "data/processed/isic2018/val.csv"
+  img_size: 224
+  batch_size: 64
+  num_workers: 4
+  include_target_labels: false
+
+model:
+  arch: "resnet18"
+  pretrained: true
+  num_classes: 1
+
+training:
+  epochs: 50
+  optimizer: "adamw"
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+
+da:
+  domain_loss_weight: 0.5
+  lambda_schedule: "linear"
+
+logging:
+  save_dir: "results/runs"

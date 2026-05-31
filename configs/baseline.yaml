@@ -1,0 +1,42 @@
+experiment:
+  name: "baseline_resnet18_full"
+  seed: 42
+  device: "auto"
+
+data:
+  task: "supervised"
+  train_csv: "data/processed/isic2018/train.csv"
+  val_csv: "data/processed/isic2018/val.csv"
+  test_csv: "data/processed/isic2018/test.csv"
+  img_size: 224
+  batch_size: 64
+  num_workers: 4
+  use_weighted_sampler: true
+  label_col: "target"
+
+model:
+  arch: "resnet18"
+  pretrained: true
+  num_classes: 1
+
+training:
+  epochs: 50
+  optimizer: "adamw"
+  lr_backbone: 1.0e-4
+  lr_head: 1.0e-3
+  weight_decay: 1.0e-4
+  scheduler: "cosine"
+  freeze_backbone_epochs: 5
+
+loss:
+  type: "focal"
+  gamma: 2.0
+  alpha: 0.75
+
+early_stopping:
+  patience: 10
+  monitor: "val_auc"
+
+logging:
+  save_dir: "results/runs"
+  log_every: 10
