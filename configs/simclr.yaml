@@ -7,8 +7,8 @@ data:
   task: "simclr"
   train_csv: "data/processed/combined_unlabeled.csv"
   img_size: 224
-  batch_size: 256
-  num_workers: 4
+  batch_size: 1024
+  num_workers: 8
 
 model:
   arch: "resnet18"
@@ -34,14 +34,20 @@ finetune:
   scheduler: "cosine"
   freeze_backbone_epochs_low: 5    # fractions <= 0.05
   freeze_backbone_epochs_high: 0   # fractions > 0.05
-  loss:
-    type: "focal"
-    gamma: 2.0
-    alpha: 0.75
-  early_stopping:
-    monitor: "val_auc"
-    patience: 7
-    min_delta: 0.0
+
+finetune_data:
+  batch_size: 64
+  num_workers: 4
+
+loss:
+  type: "focal"
+  gamma: 2.0
+  alpha: 0.75
+
+early_stopping:
+  monitor: "val_auc"
+  patience: 7
+  min_delta: 0.0
 
 logging:
   save_dir: "results/runs"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -66,15 +66,35 @@ def plot_roc_curve(y_true, y_pred_proba, label: str = "", ax=None, save_path: Op
     return fig
 
 
-def plot_auc_vs_labels(results_dict: Dict[str, Dict[float, float]], save_path: Optional[str] = None):
+def plot_auc_vs_labels(
+    results_dict: Dict[str, Dict[float, float]],
+    save_path: Optional[str] = None,
+    x_scale: Optional[str] = None,
+    x_as_percent: bool = False,
+    title: str = "AUC vs Label Budget",
+    ylim: Optional[Tuple[float, float]] = None,
+    style_map: Optional[Dict[str, Dict]] = None,
+):
     fig, ax = plt.subplots(figsize=(5, 4))
+    all_xs = sorted({x for values in results_dict.values() for x in values})
     for name, values in results_dict.items():
         xs = sorted(values.keys())
         ys = [values[x] for x in xs]
-        ax.plot(xs, ys, marker="o", label=name)
-    ax.set_xlabel("Label fraction")
+        xs_plot = [x * 100 for x in xs] if x_as_percent else xs
+        style = dict(style_map.get(name, {})) if style_map else {}
+        style.setdefault("marker", "o")
+        ax.plot(xs_plot, ys, label=name, **style)
+    ax.set_xlabel("Label Budget (% of ISIC 2018 training set)" if x_as_percent else "Label fraction")
     ax.set_ylabel("AUC")
-    ax.set_title("AUC vs Label Budget")
+    ax.set_title(title)
+    if x_scale:
+        ax.set_xscale(x_scale)
+    if x_as_percent and all_xs:
+        all_xs_plot = [x * 100 for x in all_xs]
+        ax.set_xticks(all_xs_plot)
+        ax.set_xticklabels([f"{p:.0f}%" if p >= 1 else f"{p:.1f}%" for p in all_xs_plot])
+    if ylim:
+        ax.set_ylim(*ylim)
     ax.legend()
     if save_path:
         fig.savefig(save_path, dpi=200, bbox_inches="tight")

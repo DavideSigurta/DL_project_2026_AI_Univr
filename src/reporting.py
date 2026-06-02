@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Optional, Tuple
@@ -9,7 +10,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from src.metrics import compute_metrics, plot_confusion_matrix, plot_roc_curve
-from src.utils import ensure_dir
+from src.datasets import build_loaders
+from src.models import build_backbone
+from src.utils import ensure_dir, get_device
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -44,6 +47,67 @@ def collect_predictions(model, loader, device) -> Tuple[np.ndarray, np.ndarray]:
     y_true = np.concatenate(all_labels)
     y_pred_proba = np.concatenate(all_probs)
     return y_true, y_pred_proba
+
+
+def _get_eval_checkpoint(run_dir: Path) -> Optional[Path]:
+    ckpt_path = run_dir / "checkpoints/best.pt"
+    if ckpt_path.exists():
+        return ckpt_path
+    ckpt_path = run_dir / "checkpoints/last.pt"
+    if ckpt_path.exists():
+        return ckpt_path
+    return None
+
+
+def evaluate_on_csv(
+    run_dir: Path,
+    base_config: dict,
+    test_csv: str,
+    train_csv: Optional[str] = None,
+    batch_size: Optional[int] = None,
+    device=None,
+    metrics_name: str = "test_metrics.json",
+) -> Optional[dict]:
+    """Evaluate checkpoint on a given CSV and cache metrics in run_dir."""
+    run_dir = Path(run_dir)
+    metrics_path = run_dir / metrics_name
+    if metrics_path.exists():
+        with open(metrics_path) as fp:
+            return json.load(fp)
+
+    ckpt_path = _get_eval_checkpoint(run_dir)
+    if ckpt_path is None:
+        return None
+
+    cfg = copy.deepcopy(base_config)
+    cfg.setdefault("data", {})
+    cfg["data"]["task"] = "supervised"
+    cfg["data"]["test_csv"] = test_csv
+    if batch_size is not None:
+        cfg["data"]["batch_size"] = batch_size
+    if train_csv is not None:
+        cfg["data"]["train_csv"] = train_csv
+    else:
+        cfg["data"].setdefault("train_csv", "data/processed/isic2018/train.csv")
+
+    if device is None:
+        device = get_device(cfg.get("experiment", {}).get("device"))
+
+    loader = build_loaders(cfg)["test"]
+    model = build_backbone(
+        arch=cfg["model"]["arch"],
+        pretrained=False,
+        num_classes=cfg["model"].get("num_classes", 1),
+    )
+    ckpt = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(ckpt["model"])
+    model.to(device)
+
+    y_true, y_pred_proba = collect_predictions(model, loader, device)
+    metrics = compute_metrics(y_true, y_pred_proba)
+    with open(metrics_path, "w") as fp:
+        json.dump(metrics, fp, indent=2, cls=NumpyEncoder)
+    return metrics
 
 def evaluate_and_report(run_dir: Path, model, loader, device) -> dict:
     """Evaluate the best checkpoint, save metrics and figures, print summary."""

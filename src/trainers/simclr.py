@@ -68,7 +68,7 @@ def run_ssl_pretraining(config: Dict) -> str:
 
     set_seed(exp_cfg.get("seed", 42))
     device = get_device(exp_cfg.get("device"))
-    run_dir = init_run_dir(exp_cfg.get("name", "simclr_pretrain"), base=log_cfg.get("save_dir", "results/runs"))
+    run_dir = init_run_dir(exp_cfg.get("name", "simclr_pretrain"), base_dir=log_cfg.get("save_dir", "results/runs"))
     logger = setup_logging(run_dir, name="simclr")
     save_config(config, run_dir / "config.yaml")
 
@@ -189,27 +189,38 @@ def run_ssl_finetune(
     from .supervised import run_experiment
 
     config = copy.deepcopy(base_config)
+    config.setdefault("data", {})
+    config.setdefault("experiment", {})
+
+    ft_cfg = config.get("finetune", {})
+    ft_data_cfg = config.get("finetune_data", {})
+    if ft_cfg:
+        config["training"] = copy.deepcopy(ft_cfg)
+    else:
+        config.setdefault("training", {})
 
     # Point to label-fraction CSV if requested
     if fraction is not None:
         if fraction >= 1.0:
             config["data"]["train_csv"] = "data/processed/isic2018/train.csv"
         else:
-            pct = int(fraction * 100)
-            config["data"]["train_csv"] = f"data/processed/isic2018/subsets/train_{pct}pct.csv"
+            pct = int(round(fraction * 100))
+            config["data"]["train_csv"] = f"data/processed/isic2018/subsets/train_{pct:02d}pct.csv"
+        config["data"]["val_csv"] = "data/processed/isic2018/val.csv"
+        config["data"]["test_csv"] = "data/processed/isic2018/test.csv"
+        config["data"]["use_weighted_sampler"] = True
         # Adjust freeze epochs based on fraction
-        ft_cfg = config.get("finetune", {})
         if fraction <= 0.05:
             config["training"]["freeze_backbone_epochs"] = ft_cfg.get("freeze_backbone_epochs_low", 5)
         else:
             config["training"]["freeze_backbone_epochs"] = ft_cfg.get("freeze_backbone_epochs_high", 0)
-        config["experiment"]["name"] = f"simclr_ft_{int(fraction * 100)}pct"
+        config["experiment"]["name"] = f"simclr_ft_{fraction:.2f}"
 
     config["ssl_checkpoint"] = ssl_ckpt_path
     config["data"]["task"] = "supervised"
-
-    # Map finetune section to training section expected by run_experiment
-    if "finetune" in config and "training" not in config:
-        config["training"] = copy.deepcopy(config["finetune"])
+    if "batch_size" in ft_data_cfg:
+        config["data"]["batch_size"] = ft_data_cfg["batch_size"]
+    if "num_workers" in ft_data_cfg:
+        config["data"]["num_workers"] = ft_data_cfg["num_workers"]
 
     return run_experiment(config)

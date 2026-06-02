@@ -114,6 +114,11 @@ class SemiSupervisedDataset(Dataset):
         unlabeled_ratio: float = 3.0,
         label_col: str = "target",
     ) -> None:
+        if unlabeled_transforms is None or len(unlabeled_transforms) != 2:
+            raise ValueError(
+                "SemiSupervisedDataset requires unlabeled_transforms=(student_tf, teacher_tf). "
+                "Both transforms must be provided to ensure proper image normalization."
+            )
         self.labeled = ISICDataset(
             labeled_csv,
             transforms=labeled_transforms,
@@ -129,9 +134,7 @@ class SemiSupervisedDataset(Dataset):
 
     def __getitem__(self, idx: int):
         img_l, target = self.labeled[idx]
-        student_tf, teacher_tf = (None, None)
-        if self.unlabeled_transforms is not None:
-            student_tf, teacher_tf = self.unlabeled_transforms
+        student_tf, teacher_tf = self.unlabeled_transforms
 
         unlabeled_student = []
         unlabeled_teacher = []

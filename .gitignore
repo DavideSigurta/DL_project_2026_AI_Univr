@@ -39,3 +39,5 @@ kaggle.json
 
 # Markdown files (project docs kept locally only)
 *.md
+
+.continue/
