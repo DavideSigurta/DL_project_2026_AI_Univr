@@ -183,13 +183,19 @@ def plot_training_history(run_dir: Path, save_path: Optional[str] = None):
         fig.savefig(save_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-def collect_auc_vs_fraction(exp_name_prefix: str, fractions: list, base_dir="results/runs"):
+def collect_auc_vs_fraction(
+    exp_name_prefix: str,
+    fractions: list,
+    base_dir="results/runs",
+    metrics_file: str = "test_metrics.json",
+):
     """Collect AUC from test_metrics.json for multiple runs.
 
     Args:
         exp_name_prefix: e.g., "baseline_resnet18_{:.2f}" (will format with fraction)
         fractions: list of floats, e.g., [0.01, 0.05, 0.10]
         base_dir: root runs directory
+        metrics_file: metrics filename to read (default test_metrics.json)
 
     Returns:
         dict: fraction -> AUC (or None if missing)
@@ -202,12 +208,12 @@ def collect_auc_vs_fraction(exp_name_prefix: str, fractions: list, base_dir="res
             print(f"Warning: no run found for {exp_name}")
             aucs[f] = None
             continue
-        metrics_path = run_dir / "test_metrics.json"
+        metrics_path = run_dir / metrics_file
         if metrics_path.exists():
             with open(metrics_path, "r") as fp:
                 data = json.load(fp)
                 aucs[f] = data.get("auc_roc")
         else:
-            print(f"Warning: test_metrics.json missing for {exp_name}")
+            print(f"Warning: {metrics_file} missing for {exp_name}")
             aucs[f] = None
     return aucs

@@ -1,0 +1,50 @@
+experiment:
+  name: "pseudo_label_resnet18"
+  seed: 42
+  device: "auto"
+
+data:
+  task: "supervised"
+  train_csv: "data/processed/isic2018/train.csv"      # default, overridden per fraction
+  val_csv: "data/processed/isic2018/val.csv"
+  test_csv: "data/processed/isic2018/test.csv"
+  img_size: 224
+  batch_size: 64
+  num_workers: 4
+  use_weighted_sampler: true
+  label_col: "target"
+
+model:
+  arch: "resnet18"
+  pretrained: true
+  num_classes: 1
+
+training:
+  epochs: 50
+  optimizer: "adamw"
+  lr_backbone: 1.0e-4
+  lr_head: 1.0e-3
+  weight_decay: 1.0e-4
+  scheduler: "cosine"
+  freeze_backbone_epochs: 5
+
+loss:
+  type: "focal"
+  gamma: 2.0
+  alpha: 0.75
+
+early_stopping:
+  patience: 10
+  monitor: "val_auc"
+
+pseudo_label:
+  threshold: 0.9
+  min_pseudo_samples: 10
+  unlabeled_csv: "data/processed/isic2020/train.csv"
+  freeze_backbone_epochs_low: 5
+  freeze_backbone_epochs_high: 0
+  m0_patience: 10           # M0 early stopping patience (stesso valore baseline)
+
+logging:
+  save_dir: "results/runs"
+  log_every: 10
