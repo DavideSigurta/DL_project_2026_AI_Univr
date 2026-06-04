@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import os
@@ -124,3 +125,32 @@ class EarlyStopping:
 
         self.num_bad_epochs += 1
         return self.num_bad_epochs >= self.patience
+
+
+def cleanup() -> None:
+    """Release memory between experiment runs.
+
+    Call after each training loop iteration to prevent OOM
+    (accumulated models, tensors, DataLoader workers, matplotlib figures).
+    Safe to call anywhere — uses lazy imports and graceful fallbacks.
+    """
+    gc.collect()
+
+    # Clear PyTorch CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
+    # Clear Apple MPS (Metal) cache — graceful fallback if API missing
+    if torch.backends.mps.is_available():
+        try:
+            torch.mps.empty_cache()
+        except AttributeError:
+            pass
+
+    # Close all matplotlib figures
+    try:
+        import matplotlib.pyplot as plt  # lazy import
+        plt.close('all')
+    except Exception:
+        pass

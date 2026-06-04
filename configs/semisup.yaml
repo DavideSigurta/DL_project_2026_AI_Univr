@@ -9,9 +9,10 @@ data:
   unlabeled_csv: "data/processed/isic2020/train.csv"
   val_csv: "data/processed/isic2018/val.csv"
   img_size: 224
-  batch_size: 64
+  batch_size: 32
   num_workers: 4
   unlabeled_ratio: 3.0
+  use_weighted_sampler: true
   label_col: "target"
 
 model:
@@ -22,13 +23,25 @@ model:
 training:
   epochs: 50
   optimizer: "adamw"
-  lr: 1.0e-4
+  lr_backbone: 1.0e-4
+  lr_head: 1.0e-3
   weight_decay: 1.0e-4
+  scheduler: "cosine"
+  freeze_backbone_epochs: 5
+
+loss:
+  type: "focal"
+  gamma: 2.0
+  alpha: 0.75
 
 semisup:
   ema_decay: 0.999
   consistency_weight: 10.0
   rampup_epochs: 10
+
+early_stopping:
+  patience: 10
+  monitor: "val_auc"
 
 logging:
   save_dir: "results/runs"

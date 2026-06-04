@@ -264,11 +264,15 @@ def build_loaders(config: Dict) -> Dict[str, DataLoader]:
             unlabeled_ratio=data_cfg.get("unlabeled_ratio", 3.0),
             label_col=label_col,
         )
+        sampler = None
+        if data_cfg.get("use_weighted_sampler", False):
+            sampler = _make_weighted_sampler(train_ds.labeled.df, label_col=label_col)
         loaders = {
             "train": DataLoader(
                 train_ds,
                 batch_size=batch_size,
-                shuffle=True,
+                shuffle=sampler is None,
+                sampler=sampler,
                 num_workers=num_workers,
                 drop_last=True,
             )
