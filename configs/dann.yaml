@@ -10,8 +10,11 @@ data:
   val_csv: "data/processed/isic2018/val.csv"
   img_size: 224
   batch_size: 64
-  num_workers: 4
+  num_workers: 0
   include_target_labels: false
+  label_col: "target"
+  max_target_samples: 4000
+  balanced_domains: true
 
 model:
   arch: "resnet18"
@@ -21,12 +24,26 @@ model:
 training:
   epochs: 50
   optimizer: "adamw"
-  lr: 1.0e-4
+  lr_backbone: 1.0e-4
+  lr_head: 1.0e-3
+  lr_domain: 1.0e-3
   weight_decay: 1.0e-4
+  scheduler: "cosine"
+  freeze_backbone_epochs: 0
+
+loss:
+  type: "focal"
+  gamma: 2.0
+  alpha: 0.75
 
 da:
-  domain_loss_weight: 0.5
-  lambda_schedule: "linear"
+  lambda_schedule: "dann"
+  lambda_max: 0.3
+  use_coral: false
+
+early_stopping:
+  patience: 10
+  monitor: "val_auc"
 
 logging:
   save_dir: "results/runs"

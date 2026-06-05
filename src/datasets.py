@@ -161,9 +161,14 @@ class DomainDataset(Dataset):
         transforms=None,
         label_col: str = "target",
         include_target_labels: bool = False,
+        max_target_samples: Optional[int] = None,
     ) -> None:
         src = pd.read_csv(source_csv)
         tgt = pd.read_csv(target_csv)
+
+        # Subsample target to prevent OOM and excessive batch/epoch at low fractions
+        if max_target_samples is not None and len(tgt) > max_target_samples:
+            tgt = tgt.sample(n=max_target_samples, random_state=42)
 
         src["domain_label"] = 0
         tgt["domain_label"] = 1
@@ -294,10 +299,30 @@ def build_loaders(config: Dict) -> Dict[str, DataLoader]:
             transforms=get_train_transforms(img_size),
             label_col=label_col,
             include_target_labels=data_cfg.get("include_target_labels", False),
+            max_target_samples=data_cfg.get("max_target_samples", None),
         )
+
+        # Balanced domain sampler: each batch gets ~50% source + ~50% target
+        # Weight = 1/count_per_domain so both domains have equal sampling probability
+        balanced = data_cfg.get("balanced_domains", False)
+        sampler = None
+        shuffle = True
+        if balanced:
+            df = train_ds.df
+            n_src = (df["domain_label"] == 0).sum()
+            n_tgt = (df["domain_label"] == 1).sum()
+            weights = np.where(df["domain_label"] == 0, 1.0 / n_src, 1.0 / n_tgt)
+            sampler = WeightedRandomSampler(
+                weights=torch.from_numpy(weights.astype(np.float64)),
+                num_samples=len(df),
+                replacement=True,
+            )
+            shuffle = False  # sampler handles shuffling
+
         loaders = {
             "train": DataLoader(
-                train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers
+                train_ds, batch_size=batch_size, shuffle=shuffle,
+                sampler=sampler, num_workers=num_workers
             )
         }
         val_csv = data_cfg.get("val_csv")

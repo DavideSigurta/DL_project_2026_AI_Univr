@@ -16,7 +16,9 @@ class FocalLoss(nn.Module):
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         targets = targets.float()
-        logits = logits.squeeze()
+        # squeeze last dim if 2D (e.g. [N, 1] -> [N]), but NOT if 1D (preserve [N] and [1])
+        if logits.dim() == 2 and logits.size(-1) == 1:
+            logits = logits.squeeze(-1)
         bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
         probs = torch.sigmoid(logits)
         pt = probs * targets + (1.0 - probs) * (1.0 - targets)

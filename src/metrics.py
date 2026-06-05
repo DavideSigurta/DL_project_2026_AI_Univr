@@ -101,13 +101,16 @@ def plot_auc_vs_labels(
     return fig
 
 
-def plot_tsne(features, labels, domain_labels=None, save_path: Optional[str] = None):
+def plot_tsne(features, labels, domain_labels=None, save_path: Optional[str] = None, ax=None):
     features = np.asarray(features)
     labels = np.asarray(labels).astype(int)
     tsne = TSNE(n_components=2, perplexity=30, init="pca", random_state=42)
     emb = tsne.fit_transform(features)
 
-    fig, ax = plt.subplots(figsize=(5, 4))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5, 4))
+    else:
+        fig = ax.figure
     if domain_labels is None:
         ax.scatter(emb[:, 0], emb[:, 1], c=labels, cmap="coolwarm", s=10, alpha=0.7)
     else:
