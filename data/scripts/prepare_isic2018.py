@@ -1,17 +1,3 @@
-"""
-data/scripts/prepare_isic2018.py
-Downloads HAM10000 from Kaggle if not present, then processes:
-binary labels (MEL vs rest) and a stratified 80/10/10 split.
-
-Dataset: surajghuwalewala/ham1000-segmentation-and-classification
-Expected structure after unzip:
-  data/raw/isic2018/
-  ├── images/
-  │   ├── ISIC_0024306.jpg
-  │   └── ...
-  ├── masks/          (unused)
-  └── GroundTruth.csv  (columns: image, MEL, NV, BCC, AKIEC, BKL, DF, VASC)
-"""
 import subprocess
 import pandas as pd
 from sklearn.model_selection import train_test_split

@@ -9,48 +9,21 @@ import torch
 from torch import nn
 
 from ..datasets import build_loaders
-from ..losses import FocalLoss, WeightedBCELoss
-from ..metrics import compute_metrics
+from ..losses import build_loss
 from ..models import build_backbone
 from ..utils import (
     EarlyStopping,
     append_jsonl,
+    evaluate as evaluate_shared,
     get_device,
     init_run_dir,
     save_checkpoint,
     save_config,
+    set_backbone_trainable,
     set_seed,
     setup_logging,
+    split_params,
 )
-
-
-def _split_params(model: nn.Module):
-    head_params = []
-    backbone_params = []
-    for name, param in model.named_parameters():
-        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
-            head_params.append(param)
-        else:
-            backbone_params.append(param)
-    return backbone_params, head_params
-
-
-def _set_backbone_trainable(model: nn.Module, trainable: bool) -> None:
-    for name, param in model.named_parameters():
-        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
-            param.requires_grad = True
-        else:
-            param.requires_grad = trainable
-
-
-def _build_loss(cfg: Dict) -> nn.Module:
-    loss_cfg = cfg.get("loss", {})
-    loss_type = loss_cfg.get("type", "bce")
-    if loss_type == "focal":
-        return FocalLoss(gamma=loss_cfg.get("gamma", 2.0), alpha=loss_cfg.get("alpha", None))
-    if loss_type == "weighted_bce":
-        return WeightedBCELoss(pos_weight=loss_cfg.get("pos_weight", 1.0))
-    return nn.BCEWithLogitsLoss()
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device) -> Dict[str, float]:
@@ -70,33 +43,6 @@ def train_one_epoch(model, loader, optimizer, criterion, device) -> Dict[str, fl
         total_loss += loss.item() * images.size(0)
         n += images.size(0)
     return {"loss": total_loss / max(n, 1)}
-
-
-@torch.no_grad()
-def evaluate(model, loader, criterion, device) -> Dict[str, float]:
-    model.eval()
-    total_loss = 0.0
-    n = 0
-    all_targets = []
-    all_probs = []
-    for images, targets in loader:
-        images = images.to(device)
-        targets = targets.to(device)
-        logits = model(images).view(-1)
-        loss = criterion(logits, targets)
-
-        probs = torch.sigmoid(logits).detach().cpu().numpy()
-        all_probs.append(probs)
-        all_targets.append(targets.detach().cpu().numpy())
-
-        total_loss += loss.item() * images.size(0)
-        n += images.size(0)
-
-    y_true = torch.from_numpy(np.concatenate(all_targets)).flatten().numpy()
-    y_pred = torch.from_numpy(np.concatenate(all_probs)).flatten().numpy()
-    metrics = compute_metrics(y_true, y_pred)
-    metrics["loss"] = total_loss / max(n, 1)
-    return metrics
 
 
 def run_experiment(config: Dict) -> Dict[str, float]:
@@ -123,7 +69,7 @@ def run_experiment(config: Dict) -> Dict[str, float]:
         missing, unexpected = model.load_state_dict(encoder_state, strict=False)
         logger.info(f"Loaded SSL checkpoint from {ssl_ckpt_path} | missing={len(missing)} unexpected={len(unexpected)}")
 
-    backbone_params, head_params = _split_params(model)
+    backbone_params, head_params = split_params(model)
     optimizer_cfg = config.get("training", {})
     optimizer_name = optimizer_cfg.get("optimizer", "adamw").lower()
     lr_backbone = optimizer_cfg.get("lr_backbone", optimizer_cfg.get("lr", 1e-4))
@@ -146,7 +92,7 @@ def run_experiment(config: Dict) -> Dict[str, float]:
             optimizer, T_max=optimizer_cfg.get("epochs", 1)
         )
 
-    criterion = _build_loss(config).to(device)
+    criterion = build_loss(config).to(device)
     early_cfg = config.get("early_stopping", {})
     monitor_name = early_cfg.get("monitor", "val_auc")
     monitor_mode = early_cfg.get("mode")
@@ -166,12 +112,12 @@ def run_experiment(config: Dict) -> Dict[str, float]:
     metrics_path = Path(run_dir) / "metrics.jsonl"
 
     for epoch in range(1, epochs + 1):
-        _set_backbone_trainable(model, trainable=epoch > freeze_epochs)
+        set_backbone_trainable(model, trainable=epoch > freeze_epochs)
         train_metrics = train_one_epoch(model, loaders["train"], optimizer, criterion, device)
 
         log_entry = {"epoch": epoch, "train_loss": train_metrics["loss"]}
         if "val" in loaders:
-            val_metrics = evaluate(model, loaders["val"], criterion, device)
+            val_metrics = evaluate_shared(model, loaders["val"], criterion, device)
             log_entry.update(
                 {
                     "val_loss": val_metrics["loss"],

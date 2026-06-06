@@ -9,18 +9,20 @@ import torch.nn.functional as F
 from torch import nn
 
 from ..datasets import build_loaders
-from ..losses import FocalLoss
-from ..metrics import compute_metrics
+from ..losses import build_loss
 from ..models import build_backbone
 from ..utils import (
     EarlyStopping,
     append_jsonl,
+    evaluate as evaluate_shared,
     get_device,
     init_run_dir,
     save_checkpoint,
     save_config,
+    set_backbone_trainable,
     set_seed,
     setup_logging,
+    split_params,
 )
 
 
@@ -46,59 +48,6 @@ def rampup_weight(epoch: int, rampup_epochs: int, max_weight: float = 10.0) -> f
         return max_weight
     phase = epoch / max(rampup_epochs, 1)
     return float(max_weight * torch.sigmoid(torch.tensor(12.0 * (phase - 0.5))).item())
-
-
-def _split_params(model: nn.Module):
-    head_params = []
-    backbone_params = []
-    for name, param in model.named_parameters():
-        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
-            head_params.append(param)
-        else:
-            backbone_params.append(param)
-    return backbone_params, head_params
-
-
-def _set_backbone_trainable(model: nn.Module, trainable: bool) -> None:
-    for name, param in model.named_parameters():
-        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
-            param.requires_grad = True
-        else:
-            param.requires_grad = trainable
-
-
-def _build_loss(config: Dict) -> nn.Module:
-    loss_cfg = config.get("loss", {})
-    loss_type = loss_cfg.get("type", "focal")
-    if loss_type == "focal":
-        return FocalLoss(gamma=loss_cfg.get("gamma", 2.0), alpha=loss_cfg.get("alpha", None))
-    return nn.BCEWithLogitsLoss()
-
-
-@torch.no_grad()
-def evaluate(model: nn.Module, loader: torch.utils.data.DataLoader, criterion: nn.Module, device: torch.device) -> Dict[str, float]:
-    """Standard supervised evaluation. Same as supervised.py evaluate()."""
-    model.eval()
-    total_loss = 0.0
-    n = 0
-    all_targets = []
-    all_probs = []
-    for images, targets in loader:
-        images = images.to(device)
-        targets = targets.to(device)
-        logits = model(images).view(-1)
-        loss = criterion(logits, targets)
-        probs = torch.sigmoid(logits).detach().cpu().numpy()
-        all_probs.append(probs)
-        all_targets.append(targets.detach().cpu().numpy())
-        total_loss += loss.item() * images.size(0)
-        n += images.size(0)
-
-    y_true = torch.from_numpy(np.concatenate(all_targets)).flatten().numpy()
-    y_pred = torch.from_numpy(np.concatenate(all_probs)).flatten().numpy()
-    metrics = compute_metrics(y_true, y_pred)
-    metrics["loss"] = total_loss / max(n, 1)
-    return metrics
 
 
 def train_one_epoch_mt(
@@ -207,7 +156,7 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
         p.requires_grad = False
 
     # Optimizer: differential LR backbone / head
-    backbone_params, head_params = _split_params(student)
+    backbone_params, head_params = split_params(student)
     optim_cfg = config.get("training", {})
     lr_backbone = optim_cfg.get("lr_backbone", optim_cfg.get("lr", 1e-4))
     lr_head = optim_cfg.get("lr_head", optim_cfg.get("lr", 1e-4))
@@ -229,7 +178,7 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
             optimizer, T_max=optim_cfg.get("epochs", 1)
         )
 
-    criterion = _build_loss(config).to(device)
+    criterion = build_loss(config).to(device)
 
     # Semi-supervised hyperparams
     semi_cfg = config.get("semisup", {})
@@ -257,7 +206,7 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
     metrics_path = Path(run_dir) / "metrics.jsonl"
 
     for epoch in range(1, epochs + 1):
-        _set_backbone_trainable(student, trainable=epoch > freeze_epochs)
+        set_backbone_trainable(student, trainable=epoch > freeze_epochs)
 
         train_metrics = train_one_epoch_mt(
             student, teacher, loaders["train"], optimizer, criterion,
@@ -273,7 +222,7 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
         }
 
         if "val" in loaders:
-            val_metrics = evaluate(student, loaders["val"], criterion, device)
+            val_metrics = evaluate_shared(student, loaders["val"], criterion, device)
             log_entry.update({
                 "val_loss": val_metrics["loss"],
                 "val_auc": val_metrics["auc_roc"],

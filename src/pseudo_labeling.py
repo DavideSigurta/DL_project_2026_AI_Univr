@@ -20,7 +20,6 @@ from torch.utils.data import DataLoader
 
 from .augmentations import get_val_transforms
 from .datasets import ISICDataset
-from .utils import get_device
 
 
 def build_unlabeled_loader(

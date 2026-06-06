@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import Optional
 
+import logging
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+logger = logging.getLogger(__name__)
 
 
 class FocalLoss(nn.Module):
@@ -42,7 +45,7 @@ class WeightedBCELoss(nn.Module):
         self.pos_weight = float(pos_weight)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        logits = logits.squeeze()
+        logits = logits.squeeze(-1)
         targets = targets.float()
         criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([self.pos_weight], device=logits.device))
         return criterion(logits, targets)
@@ -72,38 +75,19 @@ class NTXentLoss(nn.Module):
         return loss
 
 
-class ConsistencyLoss(nn.Module):
-    def __init__(self, reduction: str = "mean") -> None:
-        super().__init__()
-        self.reduction = reduction
+def build_loss(config: dict) -> nn.Module:
+    """Build loss function from config section.
 
-    def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor) -> torch.Tensor:
-        p_s = torch.sigmoid(student_logits)
-        p_t = torch.sigmoid(teacher_logits)
-        return F.mse_loss(p_s, p_t, reduction=self.reduction)
-
-
-class GeneralizedCrossEntropy(nn.Module):
-    def __init__(self, q: float = 0.7, num_classes: int = 2) -> None:
-        super().__init__()
-        if not (0.0 < q <= 1.0):
-            raise ValueError("q must be in (0, 1].")
-        self.q = q
-        self.num_classes = num_classes
-
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        if logits.dim() == 1 or logits.size(-1) == 1:
-            probs_pos = torch.sigmoid(logits.view(-1, 1))
-            probs = torch.cat([1.0 - probs_pos, probs_pos], dim=1)
-            targets = targets.long()
-        else:
-            probs = F.softmax(logits, dim=1)
-            targets = targets.long()
-
-        one_hot = F.one_hot(targets, num_classes=probs.size(1)).float()
-        p_t = (probs * one_hot).sum(dim=1)
-        loss = (1.0 - p_t.pow(self.q)) / self.q
-        return loss.mean()
+    Supports: focal, weighted_bce, bce (default).
+    """
+    loss_cfg = config.get("loss", {})
+    loss_type = loss_cfg.get("type", "bce")
+    if loss_type == "focal":
+        return FocalLoss(gamma=loss_cfg.get("gamma", 2.0), alpha=loss_cfg.get("alpha", None))
+    if loss_type == "weighted_bce":
+        return WeightedBCELoss(pos_weight=loss_cfg.get("pos_weight", 1.0))
+    logger.warning("Unknown loss.type '%s', falling back to BCEWithLogitsLoss", loss_type)
+    return nn.BCEWithLogitsLoss()
 
 
 class CORLoss(nn.Module):
@@ -111,6 +95,8 @@ class CORLoss(nn.Module):
         super().__init__()
 
     def forward(self, source_feat: torch.Tensor, target_feat: torch.Tensor) -> torch.Tensor:
+        if source_feat.size(0) < 2 or target_feat.size(0) < 2:
+            return torch.tensor(0.0, device=source_feat.device)
         d = source_feat.size(1)
         src = source_feat - source_feat.mean(dim=0, keepdim=True)
         tgt = target_feat - target_feat.mean(dim=0, keepdim=True)

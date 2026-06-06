@@ -4,12 +4,16 @@ import copy
 from pathlib import Path
 from typing import Dict, Optional
 
+import random
+
+import numpy as np
 import torch
 import torch.nn as nn
 
 from ..datasets import build_loaders
 from ..models import ProjectionHead, SimCLRModel, build_backbone
 from ..losses import NTXentLoss
+from .supervised import run_experiment
 from ..utils import (
     append_jsonl,
     get_device,
@@ -26,7 +30,6 @@ from ..utils import (
 # ---------------------------------------------------------------------------
 
 def _seed_worker(worker_id: int) -> None:
-    import random, numpy as np
     seed = torch.initial_seed() % (2**32)
     random.seed(seed)
     np.random.seed(seed)
@@ -186,8 +189,6 @@ def run_ssl_finetune(
     Delegates to supervised.run_experiment with ssl_checkpoint injected.
     fraction: if provided, overrides data.train_csv to the corresponding subset CSV.
     """
-    from .supervised import run_experiment
-
     config = copy.deepcopy(base_config)
     config.setdefault("data", {})
     config.setdefault("experiment", {})

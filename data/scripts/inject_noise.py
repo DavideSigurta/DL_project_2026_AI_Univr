@@ -1,7 +1,3 @@
-"""
-data/scripts/inject_noise.py
-Inject symmetric label noise into ISIC 2018 train.csv.
-"""
 from pathlib import Path
 
 import numpy as np

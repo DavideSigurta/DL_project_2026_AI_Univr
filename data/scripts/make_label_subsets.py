@@ -1,7 +1,3 @@
-"""
-data/scripts/make_label_subsets.py
-Create stratified label-budget subsets from ISIC 2018 train.csv.
-"""
 from pathlib import Path
 
 import pandas as pd

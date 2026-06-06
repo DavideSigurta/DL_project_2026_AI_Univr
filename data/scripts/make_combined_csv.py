@@ -1,8 +1,3 @@
-"""
-Merge ISIC 2018 train + ISIC 2020 train into a single unlabeled CSV for SimCLR pretraining.
-Labels are preserved in the file but will be ignored by the SimCLR dataloader (task='simclr').
-Output: data/processed/combined_unlabeled.csv
-"""
 from __future__ import annotations
 
 import argparse

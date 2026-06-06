@@ -1,28 +1,3 @@
-"""
-data/scripts/prepare_isic2020.py
-Downloads ISIC 2020 (224x224) from Kaggle if not present, then:
-  - resolves the image ID column (isic_id / image_name)
-  - resolves the metadata CSV name (train-metadata.csv / train.csv)
-  - resolves the image folder (train-image/ or train-image/image/)
-  - removes the 425 official duplicates if the list is available
-  - performs a stratified 80/10/10 split on target (0=benign, 1=malignant)
-
-Dataset: nischaydnk/isic-2020-jpg-224x224-resized
-Expected structure after unzip (variant A — most common):
-  data/raw/isic2020/
-  ├── train-image/
-  │   ├── ISIC_0015719.jpg
-  │   └── ...
-  └── train-metadata.csv   (columns: isic_id, target, ...)
-
-Or (variant B — original 2020 layout):
-  data/raw/isic2020/
-  ├── train-image/
-  │   └── image/
-  │       ├── ISIC_0015719.jpg
-  │       └── ...
-  └── train-metadata.csv   (or train.csv with image_name)
-"""
 import subprocess
 import pandas as pd
 from sklearn.model_selection import train_test_split

@@ -6,13 +6,11 @@ from pathlib import Path
 from typing import Optional, Tuple
 import numpy as np
 import torch
-import pandas as pd
-import matplotlib.pyplot as plt
 
-from src.metrics import compute_metrics, plot_confusion_matrix, plot_roc_curve
-from src.datasets import build_loaders
-from src.models import build_backbone
-from src.utils import ensure_dir, get_device
+from .metrics import compute_metrics, plot_confusion_matrix, plot_roc_curve
+from .datasets import build_loaders
+from .models import build_backbone
+from .utils import ensure_dir, get_device
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -111,12 +109,9 @@ def evaluate_on_csv(
 
 def evaluate_and_report(run_dir: Path, model, loader, device) -> dict:
     """Evaluate the best checkpoint, save metrics and figures, print summary."""
-    # Load best checkpoint
-    ckpt_path = run_dir / "checkpoints/best.pt"
-    if not ckpt_path.exists():
-        ckpt_path = run_dir / "checkpoints/last.pt"
-        if not ckpt_path.exists():
-            raise FileNotFoundError(f"No checkpoint found in {run_dir / 'checkpoints'}")
+    ckpt_path = _get_eval_checkpoint(run_dir)
+    if ckpt_path is None:
+        raise FileNotFoundError(f"No checkpoint found in {run_dir / 'checkpoints'}")
     ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt["model"])
     model.to(device)
@@ -146,42 +141,6 @@ def evaluate_and_report(run_dir: Path, model, loader, device) -> dict:
     print(f"\nArtifacts saved to: {run_dir}")
     return metrics
 
-def plot_training_history(run_dir: Path, save_path: Optional[str] = None):
-    """Plot training/validation loss and validation AUC from metrics.jsonl."""
-    metrics_file = run_dir / "metrics.jsonl"
-    if not metrics_file.exists():
-        print("No metrics.jsonl found. Cannot plot training history.")
-        return
-
-    records = []
-    with open(metrics_file, "r") as f:
-        for line in f:
-            records.append(json.loads(line))
-    df = pd.DataFrame(records)
-    if df.empty:
-        return
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    # Loss plot
-    if "train_loss" in df and "val_loss" in df:
-        axes[0].plot(df["epoch"], df["train_loss"], label="Train loss")
-        axes[0].plot(df["epoch"], df["val_loss"], label="Val loss")
-        axes[0].set_xlabel("Epoch")
-        axes[0].set_ylabel("Loss")
-        axes[0].legend()
-        axes[0].set_title("Loss curves")
-    # AUC plot
-    if "val_auc" in df:
-        axes[1].plot(df["epoch"], df["val_auc"], label="Val AUC", color="green")
-        axes[1].set_xlabel("Epoch")
-        axes[1].set_ylabel("AUC")
-        axes[1].legend()
-        axes[1].set_title("Validation AUC")
-
-    fig.tight_layout()
-    if save_path:
-        fig.savefig(save_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
 
 def collect_auc_vs_fraction(
     exp_name_prefix: str,

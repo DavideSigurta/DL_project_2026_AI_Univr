@@ -43,8 +43,7 @@ pseudo_label:
   unlabeled_csv: "data/processed/isic2020/train.csv"
   freeze_backbone_epochs_low: 5
   freeze_backbone_epochs_high: 0
-  m0_patience: 10           # M0 early stopping patience (stesso valore baseline)
+  m0_patience: 10           # M0 early stopping patience (same as baseline)
 
 logging:
   save_dir: "results/runs"
-  log_every: 10

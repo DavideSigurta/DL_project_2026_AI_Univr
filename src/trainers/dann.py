@@ -9,12 +9,12 @@ import torch.nn.functional as F
 from torch import nn
 
 from ..datasets import build_loaders
-from ..losses import CORLoss, FocalLoss
-from ..metrics import compute_metrics
+from ..losses import CORLoss, build_loss
 from ..models import build_backbone, build_dann_model
 from ..utils import (
     EarlyStopping,
     append_jsonl,
+    evaluate as evaluate_shared,
     get_device,
     init_run_dir,
     save_checkpoint,
@@ -48,14 +48,6 @@ def _build_schedule(config: Dict) -> callable:
     return lambda e, t: _ganin_lambda(e, t, lambda_max)
 
 
-def _build_loss(config: Dict) -> nn.Module:
-    loss_cfg = config.get("loss", {})
-    loss_type = loss_cfg.get("type", "focal")
-    if loss_type == "focal":
-        return FocalLoss(gamma=loss_cfg.get("gamma", 2.0), alpha=loss_cfg.get("alpha", None))
-    return nn.BCEWithLogitsLoss()
-
-
 def _make_eval_state_dict(
     backbone: nn.Module,
     task_head: nn.Module,
@@ -73,32 +65,6 @@ def _make_eval_state_dict(
     for k, v in task_head.state_dict().items():
         state[f"{classifier_key}.{k}"] = v
     return state
-
-
-@torch.no_grad()
-def evaluate(model: nn.Module, loader: torch.utils.data.DataLoader, criterion: nn.Module, device: torch.device) -> Dict[str, float]:
-    """Standard supervised evaluation. Same as mean_teacher.py evaluate()."""
-    model.eval()
-    total_loss = 0.0
-    n = 0
-    all_targets = []
-    all_probs = []
-    for images, targets in loader:
-        images = images.to(device)
-        targets = targets.to(device)
-        logits = model(images).view(-1)
-        loss = criterion(logits, targets)
-        probs = torch.sigmoid(logits).detach().cpu().numpy()
-        all_probs.append(probs)
-        all_targets.append(targets.detach().cpu().numpy())
-        total_loss += loss.item() * images.size(0)
-        n += images.size(0)
-
-    y_true = torch.from_numpy(np.concatenate(all_targets)).flatten().numpy()
-    y_pred = torch.from_numpy(np.concatenate(all_probs)).flatten().numpy()
-    metrics = compute_metrics(y_true, y_pred)
-    metrics["loss"] = total_loss / max(n, 1)
-    return metrics
 
 
 def train_one_epoch_dann(
@@ -231,7 +197,7 @@ def run_dann(config: Dict) -> Dict[str, float]:
         )
 
     # Losses
-    cls_criterion = _build_loss(config).to(device)
+    cls_criterion = build_loss(config).to(device)
 
     # Domain loss is built-in CE in train_one_epoch_dann
 
@@ -301,7 +267,7 @@ def run_dann(config: Dict) -> Dict[str, float]:
         }
 
         if "val" in loaders:
-            val_metrics = evaluate(eval_model, loaders["val"], cls_criterion, device)
+            val_metrics = evaluate_shared(eval_model, loaders["val"], cls_criterion, device)
             log_entry.update({
                 "val_loss": val_metrics["loss"],
                 "val_auc": val_metrics["auc_roc"],

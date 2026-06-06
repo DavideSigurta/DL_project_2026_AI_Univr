@@ -11,7 +11,10 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
+from torch import nn
 import yaml
+
+from .metrics import compute_metrics
 
 
 def set_seed(seed: int, deterministic: bool = False) -> None:
@@ -125,6 +128,61 @@ class EarlyStopping:
 
         self.num_bad_epochs += 1
         return self.num_bad_epochs >= self.patience
+
+
+def split_params(model: nn.Module):
+    """Split parameters into backbone (non-classifier) and head (classifier)."""
+    head_params = []
+    backbone_params = []
+    for name, param in model.named_parameters():
+        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
+            head_params.append(param)
+        else:
+            backbone_params.append(param)
+    return backbone_params, head_params
+
+
+def set_backbone_trainable(model: nn.Module, trainable: bool) -> None:
+    """Freeze or unfreeze backbone params; head params always trainable."""
+    for name, param in model.named_parameters():
+        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
+            param.requires_grad = True
+        else:
+            param.requires_grad = trainable
+
+
+@torch.no_grad()
+def evaluate(
+    model: nn.Module,
+    loader: torch.utils.data.DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+) -> dict:
+    """Standard supervised evaluation loop.
+
+    Returns dict with loss + all metrics from compute_metrics.
+    """
+    model.eval()
+    total_loss = 0.0
+    n = 0
+    all_targets = []
+    all_probs = []
+    for images, targets in loader:
+        images = images.to(device)
+        targets = targets.to(device)
+        logits = model(images).view(-1)
+        loss = criterion(logits, targets)
+        probs = torch.sigmoid(logits).detach().cpu().numpy()
+        all_probs.append(probs)
+        all_targets.append(targets.detach().cpu().numpy())
+        total_loss += loss.item() * images.size(0)
+        n += images.size(0)
+
+    y_true = torch.from_numpy(np.concatenate(all_targets)).flatten().numpy()
+    y_pred = torch.from_numpy(np.concatenate(all_probs)).flatten().numpy()
+    metrics = compute_metrics(y_true, y_pred)
+    metrics["loss"] = total_loss / max(n, 1)
+    return metrics
 
 
 def cleanup() -> None:

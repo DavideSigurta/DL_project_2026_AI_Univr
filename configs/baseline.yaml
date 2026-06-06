@@ -39,4 +39,3 @@ early_stopping:
 
 logging:
   save_dir: "results/runs"
-  log_every: 10
