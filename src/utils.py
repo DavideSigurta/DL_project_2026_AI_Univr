@@ -31,11 +31,13 @@ def set_seed(seed: int, deterministic: bool = False) -> None:
 
 def get_device(preferred: Optional[str] = None) -> torch.device:
     preferred = (preferred or "").lower().strip()
-    if preferred == "cuda" and torch.cuda.is_available():
+    if preferred in {"auto", ""}:
+        pass  # fall through to auto-detection
+    elif preferred == "cuda" and torch.cuda.is_available():
         return torch.device("cuda")
-    if preferred == "mps" and torch.backends.mps.is_available():
+    elif preferred == "mps" and torch.backends.mps.is_available():
         return torch.device("mps")
-    if preferred == "cpu":
+    elif preferred == "cpu":
         return torch.device("cpu")
 
     if torch.cuda.is_available():
@@ -130,12 +132,16 @@ class EarlyStopping:
         return self.num_bad_epochs >= self.patience
 
 
+# ── Head-layer keywords (shared across split_params, set_backbone_trainable, etc.) ──
+HEAD_KEYWORDS = ["classifier", "fc", "head"]
+
+
 def split_params(model: nn.Module):
     """Split parameters into backbone (non-classifier) and head (classifier)."""
     head_params = []
     backbone_params = []
     for name, param in model.named_parameters():
-        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
+        if any(k in name.lower() for k in HEAD_KEYWORDS):
             head_params.append(param)
         else:
             backbone_params.append(param)
@@ -145,7 +151,7 @@ def split_params(model: nn.Module):
 def set_backbone_trainable(model: nn.Module, trainable: bool) -> None:
     """Freeze or unfreeze backbone params; head params always trainable."""
     for name, param in model.named_parameters():
-        if any(k in name.lower() for k in ["classifier", "fc", "head"]):
+        if any(k in name.lower() for k in HEAD_KEYWORDS):
             param.requires_grad = True
         else:
             param.requires_grad = trainable
@@ -212,3 +218,66 @@ def cleanup() -> None:
         plt.close('all')
     except Exception:
         pass
+
+
+# ── Shared trainer utilities (extracted from supervised.py / mean_teacher.py / dann.py) ──
+
+
+def build_early_stopping(config: Dict) -> EarlyStopping:
+    """Build EarlyStopping from config section.
+
+    Config keys: ``early_stopping.monitor``, ``early_stopping.mode``,
+    ``early_stopping.patience``, ``early_stopping.min_delta``.
+
+    If ``mode`` is omitted, infers ``"min"`` for ``*loss`` monitors, else ``"max"``.
+    """
+    esc = config.get("early_stopping", {})
+    monitor_name = esc.get("monitor", "val_auc")
+    monitor_mode = esc.get("mode")
+    if monitor_mode is None:
+        monitor_mode = "min" if str(monitor_name).lower().endswith("loss") else "max"
+    return EarlyStopping(
+        patience=esc.get("patience", 10),
+        mode=monitor_mode,
+        min_delta=esc.get("min_delta", 0.0),
+    ), monitor_name, monitor_mode
+
+
+def build_optimizer(param_groups, config: Dict) -> torch.optim.Optimizer:
+    """Build AdamW or SGD optimizer from config ``training`` section.
+
+    Supports keys: ``optimizer`` ("adamw" | "sgd"), ``weight_decay``.
+    LR comes from each param group already.
+    """
+    optim_cfg = config.get("training", {})
+    optim_name = optim_cfg.get("optimizer", "adamw").lower()
+    weight_decay = optim_cfg.get("weight_decay", 0.0)
+
+    if optim_name == "sgd":
+        return torch.optim.SGD(param_groups, momentum=0.9, weight_decay=weight_decay)
+    return torch.optim.AdamW(param_groups, weight_decay=weight_decay)
+
+
+def build_scheduler(optimizer: torch.optim.Optimizer, config: Dict) -> Optional[torch.optim.lr_scheduler._LRScheduler]:
+    """Build cosine annealing scheduler if ``training.scheduler == \"cosine\"``."""
+    optim_cfg = config.get("training", {})
+    if optim_cfg.get("scheduler") == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=optim_cfg.get("epochs", 1)
+        )
+    return None
+
+
+def get_monitor_value(val_metrics: Dict, monitor_name: str = "val_auc") -> float:
+    """Extract monitor value from validation metrics dict.
+
+    Handles common keys: ``val_auc``, ``val_balanced_accuracy``,
+    ``val_macro_f1``, ``val_loss``. Falls back to ``val_auc``.
+    """
+    monitor_map = {
+        "val_auc": val_metrics["auc_roc"],
+        "val_balanced_accuracy": val_metrics["balanced_accuracy"],
+        "val_macro_f1": val_metrics["macro_f1"],
+        "val_loss": val_metrics["loss"],
+    }
+    return monitor_map.get(monitor_name, val_metrics["auc_roc"])

@@ -12,10 +12,13 @@ from ..datasets import build_loaders
 from ..losses import CORLoss, build_loss
 from ..models import build_backbone, build_dann_model
 from ..utils import (
-    EarlyStopping,
     append_jsonl,
+    build_early_stopping,
+    build_optimizer,
+    build_scheduler,
     evaluate as evaluate_shared,
     get_device,
+    get_monitor_value,
     init_run_dir,
     save_checkpoint,
     save_config,
@@ -58,6 +61,12 @@ def _make_eval_state_dict(
     build_backbone returns timm model with classifier named {classifier_key}.
     build_dann_model returns separate backbone (num_classes=0, no head) + task_head.
     This function merges them for evaluate_on_csv compatibility.
+
+    **Assumption:** ``classifier_key`` defaults to ``"fc"`` (ResNet convention).
+    If you swap the backbone architecture (e.g. EfficientNet → ``"classifier.1"``,
+    ViT → ``"head"``), update this argument accordingly. No validation is performed
+    on the resulting state dict keys, so a mismatch will silently fail in
+    ``load_state_dict``.
     """
     state = {}
     for k, v in backbone.state_dict().items():
@@ -184,17 +193,8 @@ def run_dann(config: Dict) -> Dict[str, float]:
         {"params": task_head.parameters(), "lr": lr_head},
         {"params": domain_classifier.parameters(), "lr": lr_domain},
     ]
-    optimizer_name = optim_cfg.get("optimizer", "adamw").lower()
-    if optimizer_name == "sgd":
-        optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=weight_decay)
-    else:
-        optimizer = torch.optim.AdamW(param_groups, weight_decay=weight_decay)
-
-    scheduler = None
-    if optim_cfg.get("scheduler") == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=optim_cfg.get("epochs", 1)
-        )
+    optimizer = build_optimizer(param_groups, config)
+    scheduler = build_scheduler(optimizer, config)
 
     # Losses
     cls_criterion = build_loss(config).to(device)
@@ -211,16 +211,7 @@ def run_dann(config: Dict) -> Dict[str, float]:
     total_epochs = optim_cfg.get("epochs", 50)
 
     # Early stopping
-    early_cfg = config.get("early_stopping", {})
-    monitor_name = early_cfg.get("monitor", "val_auc")
-    monitor_mode = early_cfg.get("mode")
-    if monitor_mode is None:
-        monitor_mode = "min" if str(monitor_name).lower().endswith("loss") else "max"
-    early = EarlyStopping(
-        patience=early_cfg.get("patience", 10),
-        mode=monitor_mode,
-        min_delta=early_cfg.get("min_delta", 0.0),
-    )
+    early, monitor_name, monitor_mode = build_early_stopping(config)
 
     epochs = optim_cfg.get("epochs", 50)
     freeze_epochs = optim_cfg.get("freeze_backbone_epochs", 0)
@@ -277,13 +268,7 @@ def run_dann(config: Dict) -> Dict[str, float]:
             if val_metrics["auc_roc"] > best_val_auc:
                 best_val_auc = val_metrics["auc_roc"]
 
-            monitor_map = {
-                "val_auc": val_metrics["auc_roc"],
-                "val_balanced_accuracy": val_metrics["balanced_accuracy"],
-                "val_macro_f1": val_metrics["macro_f1"],
-                "val_loss": val_metrics["loss"],
-            }
-            monitor_value = monitor_map.get(monitor_name, val_metrics["auc_roc"])
+            monitor_value = get_monitor_value(val_metrics, monitor_name)
             log_entry["val_monitor"] = monitor_value
 
             improved = monitor_value < best_metric if monitor_mode == "min" else monitor_value > best_metric

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
     balanced_accuracy_score,
@@ -13,7 +14,6 @@ from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
 )
-from sklearn.manifold import TSNE
 
 
 def compute_metrics(y_true, y_pred_proba, threshold: float = 0.5) -> Dict[str, float]:
@@ -102,6 +102,8 @@ def plot_auc_vs_labels(
 
 
 def plot_tsne(features, labels, domain_labels=None, save_path: Optional[str] = None, ax=None):
+    from sklearn.manifold import TSNE
+
     features = np.asarray(features)
     labels = np.asarray(labels).astype(int)
     tsne = TSNE(n_components=2, perplexity=30, init="pca", random_state=42)

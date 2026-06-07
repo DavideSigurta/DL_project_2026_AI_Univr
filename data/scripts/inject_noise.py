@@ -1,3 +1,12 @@
+"""Generate noisy label versions of the ISIC 2018 training set for robustness experiments.
+
+Creates CSV copies with flipped labels at 10%, 20%, 30% noise levels.
+Also saves a mask indicating which samples were noised.
+
+⚠️  Currently **not referenced** by any trainer or notebook.
+    Intended for future label-noise robustness experiments.
+"""
+
 from pathlib import Path
 
 import numpy as np

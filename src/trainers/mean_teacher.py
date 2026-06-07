@@ -12,10 +12,13 @@ from ..datasets import build_loaders
 from ..losses import build_loss
 from ..models import build_backbone
 from ..utils import (
-    EarlyStopping,
     append_jsonl,
+    build_early_stopping,
+    build_optimizer,
+    build_scheduler,
     evaluate as evaluate_shared,
     get_device,
+    get_monitor_value,
     init_run_dir,
     save_checkpoint,
     save_config,
@@ -160,23 +163,14 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
     optim_cfg = config.get("training", {})
     lr_backbone = optim_cfg.get("lr_backbone", optim_cfg.get("lr", 1e-4))
     lr_head = optim_cfg.get("lr_head", optim_cfg.get("lr", 1e-4))
-    weight_decay = optim_cfg.get("weight_decay", 0.0)
 
     param_groups = [
         {"params": backbone_params, "lr": lr_backbone},
         {"params": head_params, "lr": lr_head},
     ]
-    optimizer_name = optim_cfg.get("optimizer", "adamw").lower()
-    if optimizer_name == "sgd":
-        optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=weight_decay)
-    else:
-        optimizer = torch.optim.AdamW(param_groups, weight_decay=weight_decay)
 
-    scheduler = None
-    if optim_cfg.get("scheduler") == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=optim_cfg.get("epochs", 1)
-        )
+    optimizer = build_optimizer(param_groups, config)
+    scheduler = build_scheduler(optimizer, config)
 
     criterion = build_loss(config).to(device)
 
@@ -187,16 +181,7 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
     rampup_epochs = semi_cfg.get("rampup_epochs", 10)
 
     # Early stopping
-    early_cfg = config.get("early_stopping", {})
-    monitor_name = early_cfg.get("monitor", "val_auc")
-    monitor_mode = early_cfg.get("mode")
-    if monitor_mode is None:
-        monitor_mode = "min" if str(monitor_name).lower().endswith("loss") else "max"
-    early = EarlyStopping(
-        patience=early_cfg.get("patience", 10),
-        mode=monitor_mode,
-        min_delta=early_cfg.get("min_delta", 0.0),
-    )
+    early, monitor_name, monitor_mode = build_early_stopping(config)
 
     epochs = optim_cfg.get("epochs", 50)
     freeze_epochs = optim_cfg.get("freeze_backbone_epochs", 0)
@@ -232,13 +217,7 @@ def run_mean_teacher(config: Dict) -> Dict[str, float]:
             if val_metrics["auc_roc"] > best_val_auc:
                 best_val_auc = val_metrics["auc_roc"]
 
-            monitor_map = {
-                "val_auc": val_metrics["auc_roc"],
-                "val_balanced_accuracy": val_metrics["balanced_accuracy"],
-                "val_macro_f1": val_metrics["macro_f1"],
-                "val_loss": val_metrics["loss"],
-            }
-            monitor_value = monitor_map.get(monitor_name, val_metrics["auc_roc"])
+            monitor_value = get_monitor_value(val_metrics, monitor_name)
             log_entry["val_monitor"] = monitor_value
 
             improved = monitor_value < best_metric if monitor_mode == "min" else monitor_value > best_metric

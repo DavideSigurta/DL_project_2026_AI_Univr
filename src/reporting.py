@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 
-from .metrics import compute_metrics, plot_confusion_matrix, plot_roc_curve
+from .metrics import compute_metrics, plot_confusion_matrix, plot_roc_curve, plot_training_history
 from .datasets import build_loaders
 from .models import build_backbone
 from .utils import ensure_dir, get_device
@@ -176,3 +176,37 @@ def collect_auc_vs_fraction(
             print(f"Warning: {metrics_file} missing for {exp_name}")
             aucs[f] = None
     return aucs
+
+
+# ── Notebook helpers (extracted from duplicated code in NB03, NB04, NB05, NB06) ──
+
+
+def read_auc(run_dir, filename: str = "test_metrics.json") -> Optional[float]:
+    """Read AUC-ROC from a metrics JSON file in *run_dir*.
+
+    Returns ``None`` if file missing or key absent.
+    """
+    p = Path(run_dir) / filename
+    if p.exists():
+        return json.load(open(p)).get("auc_roc")
+    return None
+
+
+def safe_get(d: dict, key: str) -> float:
+    """Safely extract a float from dict, returning NaN on missing/None."""
+    v = d.get(key)
+    return round(v, 4) if v is not None else float("nan")
+
+
+def max_val_auc_from_run(exp_name: str, base_dir: str = "results/runs") -> Optional[float]:
+    """Scan *metrics.jsonl* for best ``val_auc`` across all epochs.
+
+    Returns ``None`` if run or metrics file missing.
+    """
+    rd = get_latest_run(exp_name, base_dir)
+    if rd is None or not (Path(rd) / "metrics.jsonl").exists():
+        return None
+    lines = (Path(rd) / "metrics.jsonl").read_text().strip().split("\n")
+    aucs_list = [json.loads(l).get("val_auc") for l in lines if l.strip()]
+    aucs_list = [a for a in aucs_list if a is not None]
+    return round(max(aucs_list), 4) if aucs_list else None

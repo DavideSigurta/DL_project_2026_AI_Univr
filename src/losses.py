@@ -45,17 +45,17 @@ class WeightedBCELoss(nn.Module):
         self.pos_weight = float(pos_weight)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        logits = logits.squeeze(-1)
+        if logits.dim() == 2 and logits.size(-1) == 1:
+            logits = logits.squeeze(-1)
         targets = targets.float()
         criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([self.pos_weight], device=logits.device))
         return criterion(logits, targets)
 
 
 class NTXentLoss(nn.Module):
-    def __init__(self, temperature: float = 0.5, device: Optional[torch.device] = None) -> None:
+    def __init__(self, temperature: float = 0.5) -> None:
         super().__init__()
         self.temperature = temperature
-        self.device = device
 
     def forward(self, z1: torch.Tensor, z2: torch.Tensor) -> torch.Tensor:
         z1 = F.normalize(z1, dim=1)

@@ -10,7 +10,7 @@ data:
   val_csv: "data/processed/isic2018/val.csv"
   img_size: 224
   batch_size: 64
-  num_workers: 0
+  num_workers: 0    # intentionally 0 — DomainDataset + fork safety on macOS
   include_target_labels: false
   label_col: "target"
   max_target_samples: 4000
